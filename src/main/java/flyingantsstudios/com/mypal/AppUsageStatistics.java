@@ -1,12 +1,10 @@
 package flyingantsstudios.com.mypal;
 
+import android.app.ActivityManager;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
-import android.content.Intent;
-import android.icu.util.Calendar;
 import android.os.Build;
-import android.provider.Settings;
 import android.support.annotation.RequiresApi;
 import android.util.Log;
 
@@ -14,84 +12,96 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.SortedMap;
 import java.util.TimeZone;
-
-import static android.content.ContentValues.TAG;
+import java.util.TreeMap;
 
 /**
  * Created by shadabbaig on 15/01/19.
  */
 
 public class AppUsageStatistics {
-    private UsageStatsManager mUsageStatsManager;
+    private static AppUsageStatistics appUsageStatistics;
     private Context context;
-    private Set<String> monitoredAppsSet;
+    private UsageStatsManager mUsageStatsManager;
+    private static Set<String> monitoredAppsSet;
+    private static Map<String, Long> lastOpenedAppMap = new HashMap<>();
+    private long coolOffTime = 60000;
 
-    public AppUsageStatistics(Context context){
-        this.context = context;
-        mUsageStatsManager = (UsageStatsManager) context.getApplicationContext()
-                .getSystemService(context.USAGE_STATS_SERVICE);
+    private AppUsageStatistics( ){
+        this.mUsageStatsManager = mUsageStatsManager;
         monitoredAppsSet = new HashSet<>(Arrays.asList(
-                "youtube","camera","gallery","clock","contacts storage","facebook",
-                "cricbuzz","whatsapp","espncricinfo","mypal","paytm"));
+                "whatsapp"));
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.N)
-    public List<UsageStats> getUsageStatistics(int intervalType) {
-        // Get the app statistics since one year ago from the current time.
-        Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.YEAR, -1);
-
-        List<UsageStats> queryUsageStats = mUsageStatsManager
-                .queryUsageStats(intervalType, System.currentTimeMillis()-10000,
-                        System.currentTimeMillis());
-
-        if (queryUsageStats.size() == 0) {
-            Log.i(TAG, "The user may not allow the access to apps usage. ");
-                    context.startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP_MR1)
+    public static AppUsageStatistics getInstance(){
+        if(appUsageStatistics == null){
+            appUsageStatistics = new AppUsageStatistics();
         }
-        return queryUsageStats;
+         return appUsageStatistics;
+    }
+    public AppUsageStatistics setContext(Context context){
+        this.context = context;
+        return appUsageStatistics;
+    }
+
+    public void setMUsageStatsManager(){
+        mUsageStatsManager = (UsageStatsManager) context.getApplicationContext()
+               .getSystemService(context.USAGE_STATS_SERVICE);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     public String latestAppOpened(){
-        List<UsageStats> usageStatsList = getUsageStatistics(StatsUsageInterval.DAILY.mInterval);
-        long currentTime = System.currentTimeMillis();
-        int diff = 10000;
-        //getDaily("whatsapp",System.currentTimeMillis() - 10000,System.currentTimeMillis());
-        for(UsageStats usageStats: usageStatsList){
-            String pkgName = usageStats.getPackageName();
-            if(pkgName.contains("whatsapp")|| pkgName.contains("facebook") || pkgName.contains("instagram")
-                    || pkgName.contains("chrome") || pkgName.contains("camera")) {
-                Log.d("STATS DATA: ", "Package name: " + usageStats.getPackageName());
-                Log.d("STATS DATA: ", "Current time: " + milliSecondsToDateTime(currentTime));
-                Log.d("STATS DATA: ", "LastUsd time: " + milliSecondsToDateTime(usageStats.getLastTimeUsed()));
-                Log.d("STATS DATA: ", "Forgrnd time: " + milliSecondsToDateTime(usageStats.getTotalTimeInForeground()));
-                Log.d("STATS DATA: ", "First tmstmp: " + milliSecondsToDateTime(usageStats.getFirstTimeStamp()));
-                Log.d("STATS DATA: ", "Last tmestmp: " + milliSecondsToDateTime(usageStats.getLastTimeStamp()));
-                long tempDiff = currentTime - usageStats.getLastTimeUsed();
-                Log.d("STATS DATA: " ,""+tempDiff);
+        String currentApp = "NULL";
+        if (Build.VERSION.SDK_INT >= 21) {
+            long time = System.currentTimeMillis();
+            List<UsageStats> appList = mUsageStatsManager.queryUsageStats(0, time - 1000000, time);
+            if (appList != null && appList.size() > 0) {
+                SortedMap<Long, UsageStats> mySortedMap = new TreeMap();
+                for (UsageStats usageStats : appList) {
+                    mySortedMap.put(usageStats.getLastTimeUsed(), usageStats);
+                }
+                if (!mySortedMap.isEmpty()) {
+                    currentApp = ((UsageStats) mySortedMap.get(mySortedMap.lastKey())).getPackageName();
+                }
             }
-            long tempDiff = currentTime - usageStats.getLastTimeUsed();
-            if( ( Math.abs(tempDiff) <=diff) && monitoredAppsSet.contains(usageStats.getPackageName())){
-                return usageStats.getPackageName();
-            }
-
+        } else {
+            currentApp = ((ActivityManager.RunningAppProcessInfo) ((ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE)).getRunningAppProcesses().get(0)).processName;
+        }
+        currentApp = currentApp.substring(currentApp.lastIndexOf('.') +1);
+        long diff = 0;
+        if(lastOpenedAppMap.containsKey(currentApp)){
+            diff = System.currentTimeMillis() - lastOpenedAppMap.get(currentApp);
+            Log.d("OPENED APP: ","Time diff is now: " + diff);
         }
 
-        return "NONE";
-    }
-
-    private boolean isMonitoredApp(String packageName){
-
-        for(String app: monitoredAppsSet){
-            return packageName.toLowerCase().contains(app);
+        if(!monitoredAppsSet.contains(currentApp)){
+            return "NULL";
         }
-        return false;
+
+        if (!lastOpenedAppMap.containsKey(currentApp)){
+            lastOpenedAppMap.put(currentApp,System.currentTimeMillis());
+            Log.d("OPENED APP: ","Not in map, show pop- up!");
+            return currentApp;
+        }else{
+            if(System.currentTimeMillis() - lastOpenedAppMap.get(currentApp) >= coolOffTime) {
+                lastOpenedAppMap.remove(currentApp);
+                Log.d("OPENED APP: ","In map but cooling period over, show pop- up!");
+                return currentApp;
+            }else {
+                Log.d("OPENED APP: ","In map and cooling period NOT over, DO NOT show pop- up!");
+                return  "NULL";
+            }
+        }
+
     }
+
 
     private String milliSecondsToDateTime(long milliseconds){
         Date currentDate = new Date(milliseconds);

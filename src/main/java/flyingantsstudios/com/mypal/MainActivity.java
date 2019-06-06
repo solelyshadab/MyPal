@@ -37,7 +37,7 @@ public class MainActivity extends AppCompatActivity {
 
         ctx = this;
         setContentView(R.layout.activity_main);
-        mSensorService = new SensorService(getCtx());
+        mSensorService = new SensorService();
         mServiceIntent = new Intent(getCtx(), mSensorService.getClass());
         if (!isMyServiceRunning(mSensorService.getClass())) {
             startService(mServiceIntent);
@@ -45,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
 
         findListofApps();
         getUsageStats();
+
     }
 
     private boolean isMyServiceRunning(Class<?> serviceClass) {

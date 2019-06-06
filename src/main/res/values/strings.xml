@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">MyPal</string>
+    <string name="hello_world">Hello world!</string>
+    <string name="action_settings">Notification Settings</string>
 </resources>

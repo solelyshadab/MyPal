@@ -12,6 +12,12 @@ import android.support.annotation.RequiresApi;
 import android.util.Log;
 import android.widget.Toast;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -21,14 +27,15 @@ import java.util.TimerTask;
 
 public class SensorService extends Service {
     public int counter=0;
-    private Context context;
-    public SensorService(Context context) {
-        super();
-        this.context = context;
-        Log.i("HERE", "here I am!");
-    }
+    private Map<String, Long> lastOpenedAppMap = new HashMap<>();
+    private long coolOffTime = 60000;
+    AppUsageStatistics appUsageStatistics;
+    private Set<String> monitoredAppSet = new HashSet<>(Arrays.asList("whatsapp","paytm","linkedin", "cricbuzz"));
 
+    @RequiresApi(api = Build.VERSION_CODES.LOLLIPOP_MR1)
     public SensorService() {
+        super();
+        Log.i("HERE", "here I am!");
     }
 
     @Override
@@ -66,12 +73,51 @@ public class SensorService extends Service {
      */
     public void initializeTimerTask() {
         timerTask = new TimerTask() {
+            @RequiresApi(api = Build.VERSION_CODES.N)
             public void run() {
                 Log.i("in timer", "in timer ++++  "+ (counter++));
-                showToastMessage();
+                String lastApp = getLatestAppOpened();
+                if(!Objects.equals(lastApp, "NULL")){
+                    showPopUp(lastApp);
+                }
             }
         };
     }
+
+//    public void initializeTimerTask() {
+//        this.timerTask = new TimerTask() {
+//            public void run() {
+//                String currentApp = "NULL";
+//                if (VERSION.SDK_INT >= 21) {
+//                    UsageStatsManager usm = (UsageStatsManager) SensorService.this.getSystemService(Context.USAGE_STATS_SERVICE);
+//                    long time = System.currentTimeMillis();
+//                    List<UsageStats> appList = usm.queryUsageStats(0, time - 1000000, time);
+//                    if (appList != null && appList.size() > 0) {
+//                        SortedMap<Long, UsageStats> mySortedMap = new TreeMap();
+//                        for (UsageStats usageStats : appList) {
+//                            mySortedMap.put(Long.valueOf(usageStats.getLastTimeUsed()), usageStats);
+//                        }
+//                        if (!mySortedMap.isEmpty()) {
+//                            currentApp = ((UsageStats) mySortedMap.get(mySortedMap.lastKey())).getPackageName();
+//                        }
+//                    }
+//                } else {
+//                    currentApp = ((ActivityManager.RunningAppProcessInfo) ((ActivityManager) SensorService.this.getSystemService("activity")).getRunningAppProcesses().get(0)).processName;
+//                }
+//                currentApp = currentApp.substring(currentApp.lastIndexOf('.') +1);
+//                if(!monitoredAppSet.contains(currentApp))
+//                    return;
+//
+//                if (!lastOpenedAppMap.containsKey(currentApp)){
+//                    showPopUp(currentApp);
+//                    lastOpenedAppMap.put(currentApp,System.currentTimeMillis());
+//                }else if(System.currentTimeMillis() - lastOpenedAppMap.get(currentApp) >= coolOffTime) {
+//                    lastOpenedAppMap.remove(currentApp);
+//                }
+//                //SensorService.this.showToastMessage(currentApp);
+//            }
+//        };
+//    }
 
     /**
      * not needed
@@ -100,10 +146,36 @@ public class SensorService extends Service {
             }
         });
     }
+    private void showToastMessage(final String app_name) {
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @RequiresApi(api = 24)
+            public void run() {
+                Context applicationContext = SensorService.this.getApplicationContext();
+                StringBuilder stringBuilder = new StringBuilder();
+                stringBuilder.append("App opened is : ");
+                stringBuilder.append(app_name);
+                Toast.makeText(applicationContext, stringBuilder.toString(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void showPopUp(String app_name){
+        if(app_name.contains("mypal") || app_name.contains("launcher")){
+            return;
+        }
+        String s = "The app opened is: ";
+        StringBuilder sb = new StringBuilder( s + app_name);
+        Context applicationContext = SensorService.this.getApplicationContext();
+        Intent intent = new Intent(applicationContext, PopUpService.class);
+        intent.putExtra("popupMessage", sb.toString());
+        startActivity(intent);
+
+    }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
     private String getLatestAppOpened(){
-        AppUsageStatistics appUsageStatistics = new AppUsageStatistics(getApplicationContext());
+        appUsageStatistics = AppUsageStatistics.getInstance();
+        appUsageStatistics.setContext(this).setMUsageStatsManager();
         return appUsageStatistics.latestAppOpened();
     }
 
